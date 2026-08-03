@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Super Wrestling Bets Generator</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        [v-cloak] { display: none !important; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; user-select: none; -webkit-user-select: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .slide-enter-active, .slide-leave-active { transition: all 0.3s ease-in-out; max-height: 500px; overflow: hidden; opacity: 1; }
+        .slide-enter-from, .slide-leave-to { max-height: 0; opacity: 0; }
+        input[type="color"] { -webkit-appearance: none; border: none; padding: 0; }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 8px; }
+    </style>
+</head>
+<body class="flex justify-center min-h-screen bg-slate-100">
+
+<div id="app" v-cloak class="w-full max-w-md bg-white shadow-xl min-h-screen flex flex-col relative">
+    
+    <!-- HEADER -->
+    <header class="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
+        <h1 class="text-sm sm:text-md font-black tracking-tight uppercase truncate mr-2">Super Wrestling Bets Generator</h1>
+        <button @click="showSettings = true" class="text-2xl hover:rotate-90 transition-transform duration-300">⚙️</button>
+    </header>
+
+    <!-- NAVIGATION TABS -->
+    <div class="flex border-b bg-slate-50 sticky top-[56px] z-20">
+        <button @click="currentView = 'players'" :class="{'border-b-4 border-green-500 font-bold text-slate-900': currentView === 'players', 'text-slate-500': currentView !== 'players'}" class="flex-1 py-3 text-center transition uppercase text-[10px] sm:text-xs tracking-widest cursor-pointer">Joueur·euses</button>
+        <button @click="currentView = 'bets'" :class="{'border-b-4 border-green-500 font-bold text-slate-900': currentView === 'bets', 'text-slate-500': currentView !== 'bets'}" class="flex-1 py-3 text-center transition uppercase text-[10px] sm:text-xs tracking-widest cursor-pointer">Match & Paris</button>
+        <button @click="currentView = 'resolve'" :class="{'border-b-4 border-green-500 font-bold text-slate-900': currentView === 'resolve', 'text-slate-500': currentView !== 'resolve'}" class="flex-1 py-3 text-center transition uppercase text-[10px] sm:text-xs tracking-widest cursor-pointer">Résultat</button>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-grow p-4 overflow-y-auto pb-20">
+        
+        <!-- TAB 1: PLAYERS -->
+        <div v-show="currentView === 'players'" class="space-y-4">
+            <button @click="openAddPlayerModal" class="w-full bg-slate-800 text-white p-4 rounded-xl font-bold shadow-lg transition active:scale-95">+ Ajouter un·e joueur·euse</button>
+            
+            <div v-for="player in players" :key="player.id" class="bg-white p-4 rounded-xl shadow-sm border-2 flex flex-col gap-2" :style="{ borderColor: player.color + '40' }">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded-full shadow-inner border border-slate-200" :style="{ backgroundColor: player.color }"></div>
+                        <span class="font-bold text-lg text-slate-800 cursor-pointer select-none flex items-center gap-2"
+                            @mousedown="startPress(player)" @touchstart="startPress(player)"
+                            @mouseup="cancelPress" @mousemove="cancelPress" @mouseleave="cancelPress"
+                            @touchend="cancelPress" @touchmove="cancelPress" @contextmenu.prevent>
+                            {{ player.name }}
+                            <button v-if="player.hasGage" @click.stop="resolveGage(player)" class="bg-amber-100 text-amber-700 text-[10px] uppercase font-black px-2 py-1 rounded shadow-sm border border-amber-300 hover:bg-amber-200">✅ Gage</button>
+                        </span>
+                    </div>
+                    <span class="text-green-600 font-bold text-xl">{{ formatMoney(player.balance) }}</span>
+                </div>
+                
+                <div class="text-xs text-slate-500 flex justify-between items-center uppercase tracking-wider font-semibold">
+                    <span>Série actuelle : {{ player.streak }}</span>
+                    <span class="text-xl">{{ getStreakEmoji(player.streak) }}</span>
+                </div>
+
+                <!-- Custom Gage Display -->
+                <transition name="slide">
+                    <div v-if="player.hasGage" class="mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                        <p class="text-xs font-bold text-amber-800 uppercase mb-1">🎯 Gage en cours</p>
+                        <p class="text-sm text-slate-700 mb-1">A demandé <strong>{{ formatMoney(player.gageAmount) }}</strong> de seconde chance.</p>
+                        <p class="text-sm text-slate-800 font-black italic">"{{ player.gageText }}"</p>
+                    </div>
+                </transition>
+
+                <button v-if="player.balance <= 0" @click="openSecondChance(player)" class="mt-1 w-full bg-amber-100 text-amber-700 py-2 rounded-lg text-xs font-bold border border-amber-300 hover:bg-amber-200 transition active:scale-95">
+                    🛟 Demander une Seconde Chance
+                </button>
+            </div>
+
+            <!-- STATS & RECORDS SECTION -->
+            <div v-if="players.length > 0" class="mt-8 space-y-4">
+                
+                <section class="border-t border-slate-200 pt-4" v-if="hasAnyWins">
+                    <button @click="isWinsOpen = !isWinsOpen" class="w-full flex justify-between items-center text-slate-400 uppercase text-xs tracking-[0.2em] mb-2 font-black outline-none">
+                        <span>🏅 Compteur de Victoires</span><span class="text-lg transition-transform" :class="{'rotate-180': isWinsOpen}">▼</span>
+                    </button>
+                    <transition name="slide">
+                        <div v-show="isWinsOpen" class="bg-gradient-to-br from-yellow-50 to-amber-50 rounded-xl p-4 mt-2 border border-yellow-200 shadow-inner">
+                            <ul class="space-y-2">
+                                <li v-for="p in players.filter(p => p.wins > 0).sort((a,b) => b.wins - a.wins)" :key="p.id" class="flex justify-between items-center text-sm bg-white p-2 rounded shadow-sm border border-yellow-100">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-3 h-3 rounded-full shadow-inner" :style="{ backgroundColor: p.color }"></div>
+                                        <span class="font-bold text-slate-800">{{ p.name }}</span>
+                                    </div>
+                                    <span class="font-black text-amber-600 flex items-center gap-1">{{ p.wins }} <span class="text-lg">🏆</span></span>
+                                </li>
+                            </ul>
+                        </div>
+                    </transition>
+                </section>
+
+                <section class="border-t border-slate-200 pt-4">
+                    <button @click="isHallOfFameOpen = !isHallOfFameOpen" class="w-full flex justify-between items-center text-slate-400 uppercase text-xs tracking-[0.2em] mb-2 font-black outline-none">
+                        <span>🏆 Hall of Fame (Séries)</span><span class="text-lg transition-transform" :class="{'rotate-180': isHallOfFameOpen}">▼</span>
+                    </button>
+                    <transition name="slide">
+                        <div v-show="isHallOfFameOpen" class="grid grid-cols-2 gap-3 mt-4">
+                            <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200 text-center">
+                                <p class="text-[10px] font-extrabold text-green-700 uppercase tracking-wider mb-1">👑 Record Victoires</p>
+                                <p v-if="topWinRecord" class="text-2xl font-black text-green-600 my-1">+{{ topWinRecord.value }}</p>
+                                <p v-else class="text-slate-400 text-xs italic">Aucun</p>
+                                <div class="flex flex-wrap gap-1 justify-center mt-2" v-if="topWinRecord">
+                                    <span v-for="p in topWinRecord.players" :key="p.id" class="bg-green-100 text-green-800 text-[10px] font-bold px-2 rounded-full">{{ p.name }}</span>
+                                </div>
+                            </div>
+                            <div class="bg-gradient-to-br from-red-50 to-rose-50 p-4 rounded-xl border border-red-200 text-center">
+                                <p class="text-[10px] font-extrabold text-red-700 uppercase tracking-wider mb-1">🤡 Record clownesque</p>
+                                <p v-if="topLoseRecord" class="text-2xl font-black text-red-600 my-1">-{{ topLoseRecord.value }}</p>
+                                <p v-else class="text-slate-400 text-xs italic">Aucun</p>
+                                <div class="flex flex-wrap gap-1 justify-center mt-2" v-if="topLoseRecord">
+                                    <span v-for="p in topLoseRecord.players" :key="p.id" class="bg-red-100 text-red-800 text-[10px] font-bold px-2 rounded-full">{{ p.name }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </transition>
+                </section>
+
+                <section class="border-t border-slate-200 pt-4">
+                    <button @click="isBBBOpen = !isBBBOpen" class="w-full flex justify-between items-center text-slate-400 uppercase text-xs tracking-[0.2em] mb-2 font-black outline-none">
+                        <span>🎱 Biggest Balls Ballroom</span><span class="text-lg transition-transform" :class="{'rotate-180': isBBBOpen}">▼</span>
+                    </button>
+                    <transition name="slide">
+                        <div v-show="isBBBOpen" class="bg-slate-800 text-white rounded-xl p-4 mt-2 shadow-inner">
+                            <p v-if="biggestBallsRanking.length === 0" class="text-center text-slate-500 text-xs italic">Aucun pari risqué pour le moment.</p>
+                            <ul class="space-y-4">
+                                <li v-for="(p, index) in biggestBallsRanking" :key="p.id" class="border-b border-slate-700 pb-3 last:border-0 p-1 rounded">
+                                    <div class="flex justify-between items-center text-sm mb-1">
+                                        <span class="font-bold"><span class="text-amber-400 mr-2">#{{ index + 1 }}</span>{{ p.name }}</span>
+                                        <span class="font-black text-right leading-tight" :class="p.maxRisk === 1 ? 'text-red-500' : 'text-amber-500'">
+                                            <span v-if="p.maxRisk === 1">
+                                                ALL IN ! 
+                                                <span v-if="p.biggestBallDetail.balance >= 100000">🤯 LÉGENDAIRE</span>
+                                                <span v-else-if="p.biggestBallDetail.balance >= 10000">⚡ AUDACIEUX</span>
+                                                <span v-else>🔥</span>
+                                            </span>
+                                            <span v-else>{{ formatPercentage(p.maxRisk || 0) }}</span>
+                                        </span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2 mb-1 overflow-hidden">
+                                        <div class="h-2 rounded-full transition-all" :class="p.maxRisk === 1 ? 'bg-red-500 animate-pulse' : 'bg-amber-400'" :style="{ width: (p.maxRisk || 0) * 100 + '%' }"></div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 text-right font-bold" v-if="p.biggestBallDetail">
+                                        Pari de <span class="text-white">{{ formatMoney(p.biggestBallDetail.amount) }}</span> sur un solde de {{ formatMoney(p.biggestBallDetail.balance) }}
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </transition>
+                </section>
+            </div>
+        </div>
+
+        <!-- TAB 2: MATCH & BETS -->
+        <div v-show="currentView === 'bets'" class="space-y-6">
+            
+            <!-- CURRENT EVENT VIEW -->
+            <section class="mb-4">
+                <button v-if="!currentEvent.active" @click="showEventModal = true" class="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold shadow-lg active:scale-95 flex justify-center items-center gap-2">
+                    <span class="text-xl">📺</span> Que regardons-nous ?
+                </button>
+                <div v-else class="bg-slate-900 rounded-xl shadow-lg overflow-hidden border border-slate-700">
+                    <div class="p-4 flex flex-col items-center border-b border-slate-800">
+                        <span class="text-[10px] text-indigo-300 font-bold uppercase tracking-widest mb-1">{{ currentEvent.type }}</span>
+                        <span class="text-white font-black text-xl leading-tight mb-1">{{ currentEvent.name }}</span>
+                        <span v-if="currentEvent.date" class="text-xs text-slate-400">📅 {{ formatDate(currentEvent.date) }}</span>
+                    </div>
+                    <button @click="endEvent" class="w-full bg-red-600 text-white p-3 font-bold hover:bg-red-700 transition flex justify-center items-center text-sm uppercase tracking-wider">
+                        🔴 Terminer soirée
+                    </button>
+                </div>
+            </section>
+
+            <div v-if="players.length === 0" class="text-center text-slate-400 italic mt-10">Ajoutez d'abord des joueur·euses.</div>
+
+            <template v-else>
+                <!-- REGISTER MATCH FORM -->
+                <section v-if="!currentMatch.isRegistered" class="bg-white p-5 rounded-2xl shadow-md border border-slate-200">
+                    <h2 class="font-black text-lg text-slate-800 border-b pb-2 mb-4">🤼‍♂️ Enregistrer un Match</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Stipulation / Type de match</label>
+                            <input v-model="currentMatch.type" type="text" placeholder="Ex: Singles, Tornado Tag, Championship..." class="w-full border-2 border-slate-200 p-3 rounded-xl bg-slate-50 font-bold outline-none focus:border-indigo-400">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-2">Participants</label>
+                            <div v-for="(wrestler, index) in currentMatch.wrestlers" :key="index" class="flex gap-2 mb-2">
+                                <input v-model="currentMatch.wrestlers[index]" type="text" :placeholder="'Catcheur·euse ' + (index + 1)" class="w-full border-2 border-slate-200 p-3 rounded-xl bg-slate-50 font-bold outline-none focus:border-indigo-400">
+                                <button v-if="currentMatch.wrestlers.length > 2" @click="removeWrestler(index)" class="bg-red-100 text-red-500 px-4 rounded-xl font-bold hover:bg-red-200">✕</button>
+                            </div>
+                            <button @click="addWrestler" class="text-indigo-600 font-bold text-sm mt-2 flex items-center gap-1 hover:text-indigo-800">+ Ajouter un participant</button>
+                        </div>
+                        <div v-if="isChampionshipMatch" class="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                            <label class="block text-xs font-bold text-amber-700 uppercase mb-1">🏆 Champion Actuel (Optionnel)</label>
+                            <select v-model="currentMatch.championIndex" class="w-full border border-amber-300 p-2 rounded-lg bg-white font-bold text-slate-800 outline-none">
+                                <option :value="-1">Aucun / Vacant</option>
+                                <option v-for="(w, idx) in currentMatch.wrestlers" :key="idx" :value="idx" v-show="w.trim() !== ''">{{ w }}</option>
+                            </select>
+                        </div>
+                        <button @click="registerMatch" class="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition active:scale-95 mt-4">
+                            Valider le Match
+                        </button>
+                    </div>
+                </section>
+
+                <!-- ACTIVE MATCH & BETS -->
+                <section v-else class="space-y-4">
+                    <div class="bg-slate-800 p-4 rounded-2xl shadow-md text-white flex justify-between items-center">
+                        <div>
+                            <span class="text-[10px] text-indigo-300 font-bold uppercase tracking-widest block">{{ currentMatch.type }}</span>
+                            <span class="font-black">
+                                <span v-for="(w, idx) in currentMatch.wrestlers.filter(w=>w.trim())" :key="idx">
+                                    {{ w }}<span v-if="idx === currentMatch.championIndex"> 🏆</span>
+                                    <span v-if="idx < currentMatch.wrestlers.filter(w=>w.trim()).length - 1"> vs </span>
+                                </span>
+                            </span>
+                        </div>
+                        <!-- Modifying the match here dynamically updates player bet displays below -->
+                        <button @click="editMatch" class="bg-slate-700 text-xs px-3 py-2 rounded-lg font-bold hover:bg-slate-600">Modifier</button>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-2xl shadow-md border border-slate-200 space-y-4">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h2 class="font-black text-lg text-slate-800">💰 Paris des Joueur·euses</h2>
+                            <span v-if="currentMatch.betsLocked" class="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold">Verrouillé</span>
+                        </div>
+
+                        <!-- BET PLACEMENT -->
+                        <div v-if="!currentMatch.betsLocked" class="space-y-6">
+                            <div v-for="p in players" :key="p.id" class="p-4 rounded-xl border-2 bg-slate-50 relative" :style="{ borderColor: p.color + '60' }">
+                                <div class="absolute -top-3 left-3 bg-white px-2 py-0.5 rounded text-xs font-black shadow-sm" :style="{ color: p.color }">{{ p.name }}</div>
+                                <div class="text-right text-[10px] font-bold text-slate-400 mb-2 uppercase">Solde : {{ formatMoney(p.balance) }}</div>
+                                
+                                <select v-if="getDraftBet(p.id)" v-model="getDraftBet(p.id).wrestlerIndex" class="w-full border-2 border-slate-200 p-2.5 rounded-lg bg-white font-bold outline-none focus:border-slate-400 mb-3 text-sm">
+                                    <option :value="-1" disabled>-- Choisir le vainqueur --</option>
+                                    <option v-for="(w, idx) in currentMatch.wrestlers" :key="idx" :value="idx">
+                                        {{ w }} <span v-if="idx === currentMatch.championIndex">🏆</span>
+                                    </option>
+                                </select>
+                                
+                                <div v-if="getDraftBet(p.id)" class="flex flex-col gap-2">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="font-black text-lg text-slate-400">{{ currentCurrencySymbol }}</span>
+                                        <input v-model.number="getDraftBet(p.id).amount" @input="enforceBetLimit(p)" type="number" placeholder="Mise" class="w-full border-b-2 border-slate-300 bg-transparent p-2 text-lg font-black text-slate-800 outline-none focus:border-emerald-500">
+                                    </div>
+                                    <button @click="getDraftBet(p.id).amount = p.balance" class="w-full bg-red-100 text-red-600 py-2 rounded-lg text-xs font-black border border-red-200 hover:bg-red-200 uppercase tracking-widest transition">
+                                        ALL IN !
+                                    </button>
+                                </div>
+                            </div>
+                            <button @click="lockBets" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700 active:scale-95 text-lg">
+                                Verrouiller tous les paris
+                            </button>
+                        </div>
+
+                        <!-- LOCKED BETS VIEW -->
+                        <div v-else class="space-y-3">
+                            <div v-for="b in lockedBetsDisplay" :key="b.playerId" class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: b.color }"></div>
+                                    <span class="font-bold text-slate-800 text-sm">{{ b.playerName }}</span>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xs text-slate-500">Mise de {{ formatMoney(b.amount) }} sur</div>
+                                    <div class="font-black text-sm text-slate-800">
+                                        {{ b.wrestlerIndex >= 0 ? currentMatch.wrestlers[b.wrestlerIndex] : 'Aucun' }} 
+                                        <span v-if="b.wrestlerIndex === currentMatch.championIndex && b.wrestlerIndex >= 0">🏆</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button @click="unlockBetsOnce" :disabled="currentMatch.hasEditedBets" class="w-full bg-slate-200 text-slate-700 p-3 rounded-xl font-bold mt-2 hover:bg-slate-300 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                Corriger les paris (1 seule fois)
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </template>
+        </div>
+
+        <!-- TAB 3: RESOLVE MATCH -->
+        <div v-show="currentView === 'resolve'" class="space-y-4">
+            <div v-if="!currentMatch.isRegistered || !currentMatch.betsLocked" class="text-center text-slate-400 mt-10 italic">
+                Veuillez créer un match et verrouiller les paris pour pouvoir déterminer un vainqueur.
+            </div>
+            
+            <div v-else class="bg-slate-900 p-6 rounded-2xl shadow-xl text-white">
+                <h2 class="font-black text-xl mb-6 text-center italic tracking-tight">Vainqueur du Match</h2>
+                <div class="flex flex-col gap-4">
+                    <button v-for="(wrestler, idx) in currentMatch.wrestlers" :key="idx" @click="resolveMatch(idx)" class="bg-white text-slate-900 pt-4 pb-2 px-4 rounded-xl font-black shadow-lg hover:bg-slate-100 active:scale-95 transition flex flex-col items-center">
+                        <span class="text-lg">{{ wrestler }} <span v-if="idx === currentMatch.championIndex">🏆</span></span>
+                        <div class="flex w-full h-2 rounded mt-3 gap-0.5" v-if="getColorsForWrestler(idx).length > 0">
+                            <div v-for="(color, cIdx) in getColorsForWrestler(idx)" :key="cIdx" :style="{ backgroundColor: color }" class="flex-1 h-full rounded-sm"></div>
+                        </div>
+                        <div class="w-full h-2 mt-3" v-else></div>
+                    </button>
+                    
+                    <div class="border-t border-slate-700 my-2"></div>
+                    
+                    <button @click="resolveMatch(-1)" class="bg-red-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-red-700 active:scale-95 transition">
+                        🛑 NO CONTEST / NUL
+                    </button>
+
+                    <div class="bg-slate-800 text-white p-4 rounded-xl border border-slate-700 mt-6 shadow-inner">
+                        <label class="block text-center text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Multiplicateur de gains (Cote)</label>
+                        <div class="flex justify-center items-center gap-3">
+                            <button @click="adjustMultiplier(-0.1)" class="w-8 h-8 bg-slate-700 border border-slate-600 rounded-full font-bold">-</button>
+                            <input v-model.number="multiplier" type="number" step="0.1" class="w-20 text-center text-xl font-black bg-transparent border-b-2 border-slate-500 outline-none">
+                            <button @click="adjustMultiplier(0.1)" class="w-8 h-8 bg-slate-700 border border-slate-600 rounded-full font-bold">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- MODALS SECTION -->
+
+    <!-- Victory Modal -->
+    <transition name="fade">
+        <div v-if="showVictoryModal" class="fixed inset-0 z-50 bg-yellow-400/90 flex justify-center items-center p-4 text-center">
+            <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-8 transform transition-all scale-100">
+                <div class="text-6xl mb-4">🏆</div>
+                <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">Jackpot !</h2>
+                <p class="text-lg font-bold text-slate-600 mb-6">
+                    Félicitations <span class="text-indigo-600 font-black text-2xl">{{ victoryData?.name }}</span> !<br>
+                    Tu as atteint les 10 Millions et remporté cette partie de main de maître !
+                </p>
+                <p class="text-sm text-slate-500 italic mb-6">
+                    La partie va recommencer pour tout le monde. Les compteurs sont remis à 1'000, mais notre gagnant(e) aura un handicap et commencera la nouvelle ère à 900 ! (Les séries de victoires/défaites sont conservées).
+                </p>
+                <button @click="closeVictoryAndReset" class="w-full bg-yellow-500 text-white p-4 rounded-xl font-black shadow-lg text-lg hover:bg-yellow-600 active:scale-95 transition">
+                    Commencer une nouvelle ère
+                </button>
+            </div>
+        </div>
+    </transition>
+    
+    <!-- Match Result Modal -->
+    <transition name="fade">
+        <div v-if="showMatchResultModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div class="text-center border-b pb-4 mb-4">
+                    <span class="text-[10px] text-indigo-500 font-bold uppercase tracking-widest">{{ lastMatchResult.matchType }}</span>
+                    <h2 class="text-xl font-black text-slate-800 leading-tight mt-1">
+                        Résultat du Match
+                    </h2>
+                    <p class="text-sm font-bold text-slate-600 mt-2">
+                        Gagnant : <span class="text-green-600">{{ getWrestlerName(lastMatchResult.winnerIndex, lastMatchResult) }}</span>
+                    </p>
+                    <p v-if="isHistoryChampionship(lastMatchResult) && lastMatchResult.winnerIndex !== -1" class="text-lg font-black mt-2 text-amber-500 animate-pulse">
+                        {{ lastMatchResult.winnerIndex === lastMatchResult.championIndex ? '🏆 AND STILL!' : '🏆 AND NEW!' }}
+                    </p>
+                </div>
+                <div class="space-y-3 mb-6">
+                    <div v-for="res in lastMatchResult.playerResults" :key="res.name" class="flex flex-col bg-slate-50 p-3 rounded-lg border border-slate-100 gap-1">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: res.color }"></div>
+                                <span class="font-bold text-slate-800 text-sm">{{ res.name }}</span>
+                            </div>
+                            <span class="font-black" :class="res.diff >= 0 ? 'text-green-600' : 'text-red-500'">
+                                {{ formatMoney(res.diff, true) }}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-500 italic mt-1">{{ res.message }}</div>
+                    </div>
+                </div>
+                <button @click="closeMatchResult" class="w-full bg-slate-900 text-white p-3 rounded-xl font-bold hover:bg-slate-800">Fermer</button>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Settings Modal -->
+    <transition name="fade">
+        <div v-if="showSettings" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
+                <h2 class="text-xl font-black mb-4 text-slate-800">Paramètres</h2>
+                
+                <button @click="showHistory = true" class="w-full bg-indigo-100 text-indigo-700 p-3 rounded-xl font-bold mb-6 shadow-sm hover:bg-indigo-200">Voir l'historique complet</button>
+                
+                <div class="border-t border-slate-200 pt-4 mb-6">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Devise du jeu</h3>
+                    <select v-model="selectedCurrencyId" @change="saveState" class="w-full border p-3 rounded-xl bg-slate-50 font-bold outline-none text-sm text-slate-800 focus:border-indigo-500 transition">
+                        <option v-for="cur in currencies" :key="cur.id" :value="cur.id">{{ cur.name }}</option>
+                    </select>
+                </div>
+
+                <div class="border-t border-slate-200 pt-4 mb-6">
+                    <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Système de Sauvegardes (5 Emplacements)</h3>
+
+                    <div v-for="saveSlot in [1, 2, 3, 4, 5]" :key="saveSlot" class="mb-2 border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                        <button v-if="!getSaveData(saveSlot)" @click="openNewSaveModal(saveSlot)" class="w-full flex justify-center items-center p-3 hover:bg-slate-100 transition text-slate-400 text-sm font-bold border-dashed border-2 border-slate-200 rounded-xl">
+                            + Emplacement {{ saveSlot }} (Vide)
+                        </button>
+                        
+                        <div v-else>
+                            <button @click="toggleSaveExpand(saveSlot)" class="w-full flex justify-between items-center p-3 hover:bg-slate-100 transition text-left">
+                                <span class="font-bold text-slate-800 text-sm truncate mr-2">#{{ saveSlot }} - {{ getSaveData(saveSlot).name }}</span>
+                                <span class="text-[10px] text-slate-400 flex-shrink-0 flex items-center gap-1">{{ formatDate(getSaveData(saveSlot).savedAt) }} <span class="inline-block transition-transform" :class="{'rotate-180': expandedSaveId === saveSlot}">▾</span></span>
+                            </button>
+                            <transition name="slide">
+                                <div v-if="expandedSaveId === saveSlot" class="flex gap-2 p-3 pt-0">
+                                    <button @click="saveGame(saveSlot)" class="flex-[2] bg-green-100 text-green-700 py-2 rounded-lg font-bold text-[11px] border border-green-200 hover:bg-green-200">💾 Écraser</button>
+                                    <button @click="loadGame(saveSlot)" class="flex-[2] bg-blue-100 text-blue-700 py-2 rounded-lg font-bold text-[11px] border border-blue-200 hover:bg-blue-200">📂 Charger</button>
+                                    <button @click="deleteSave(saveSlot)" class="flex-1 bg-red-100 text-red-600 px-3 rounded-lg font-bold border border-red-200 hover:bg-red-200 text-[11px]">🗑️</button>
+                                </div>
+                            </transition>
+                        </div>
+                    </div>
+                </div>
+
+                <button @click="resetGame" class="w-full bg-red-100 text-red-600 border border-red-200 p-3 rounded-xl font-bold mb-4 shadow-sm hover:bg-red-200">Reset de la partie en cours</button>
+                <button @click="showSettings = false" class="w-full bg-slate-200 text-slate-800 p-3 rounded-xl font-bold hover:bg-slate-300">Fermer</button>
+            </div>
+        </div>
+    </transition>
+
+    <!-- History Modal (kept after Settings Modal in the DOM so it stacks above it) -->
+    <transition name="fade">
+        <div v-if="showHistory" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[90vh]">
+                <h2 class="text-xl font-black mb-4 text-slate-800">Historique des matchs</h2>
+                
+                <div class="flex gap-2 mb-4">
+                    <select v-model="historyFilterEvent" class="flex-[2] border p-2 rounded-lg bg-slate-50 font-bold outline-none text-xs">
+                        <option value="ALL">Tous les shows</option>
+                        <option v-for="ev in uniqueHistoryEvents" :key="ev" :value="ev">{{ ev }}</option>
+                    </select>
+                    <select v-model="historySortOrder" class="flex-1 border p-2 rounded-lg bg-slate-50 font-bold outline-none text-xs">
+                        <option value="desc">Plus récent</option>
+                        <option value="asc">Plus ancien</option>
+                    </select>
+                </div>
+
+                <div class="overflow-y-auto flex-grow space-y-4 mb-4 pr-2">
+                    <div v-if="filteredHistory.length === 0" class="text-center text-slate-400 text-sm italic py-4">Aucun match enregistré.</div>
+                    <div v-for="match in filteredHistory" :key="match.id" class="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+                        <div class="flex justify-between items-start mb-2 border-b border-slate-200 pb-2">
+                            <div>
+                                <div class="text-[10px] font-bold text-indigo-600 uppercase">{{ match.eventName }}</div>
+                                <div class="text-xs font-black text-slate-800">{{ match.matchType }}</div>
+                            </div>
+                            <div class="text-[10px] text-slate-400 text-right">{{ formatDate(match.date) }}</div>
+                        </div>
+                        <div class="text-xs mb-2">
+                            <span class="text-slate-500 font-bold">Gagnant:</span> 
+                            <span class="font-black text-slate-800">{{ getWrestlerName(match.winnerIndex, match) }}</span>
+                            <span v-if="isHistoryChampionship(match) && match.winnerIndex !== -1" class="font-black text-amber-500 ml-1">
+                                {{ match.winnerIndex === match.championIndex ? '🏆 AND STILL!' : '🏆 AND NEW!' }}
+                            </span>
+                        </div>
+                        <div class="space-y-1">
+                            <div v-for="res in match.playerResults" :key="res.name" class="flex justify-between text-[10px] border-t border-slate-100 pt-1">
+                                <span class="font-bold text-slate-600">{{ res.name }}</span>
+                                <span class="font-bold" :class="res.diff >= 0 ? 'text-green-600' : 'text-red-500'">{{ formatMoney(res.diff, true) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button @click="showHistory = false" class="w-full bg-slate-900 text-white p-3 rounded-xl font-bold hover:bg-slate-800 mt-auto">Fermer l'historique</button>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Create Event Modal -->
+    <transition name="fade">
+        <div v-if="showEventModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+                <h2 class="text-xl font-black mb-4 text-slate-800">Nouveau Show</h2>
+                <input v-model="currentEvent.name" type="text" placeholder="Nom du show (ex: Dynamite, All In)" class="w-full border p-3 rounded-xl mb-3 bg-slate-50 font-bold outline-none focus:border-indigo-500">
+                
+                <select v-model="currentEvent.type" class="w-full border p-3 rounded-xl mb-4 bg-slate-50 font-bold outline-none focus:border-indigo-500">
+                    <option value="" disabled>Type de Soirée</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Weekly Spécial">Weekly Spécial</option>
+                    <option value="Pay Per View">Pay Per View</option>
+                </select>
+
+                <button @click="startEvent" class="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold shadow-md hover:bg-indigo-700">Lancer la soirée</button>
+                <button @click="showEventModal = false" class="w-full bg-slate-200 text-slate-700 p-3 rounded-xl font-bold mt-3">Annuler</button>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Edit Player Modal -->
+    <transition name="fade">
+        <div v-if="showEditPlayerModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6">
+                <h2 class="text-xl font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-full shadow-inner border border-slate-200" :style="{ backgroundColor: tempEditPlayer.color }"></div>
+                    Édition
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase">Couleur</label>
+                        <input v-model="tempEditPlayer.color" type="color" class="w-full h-12 rounded-lg cursor-pointer mt-1 bg-slate-50 border p-1">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase">Nom</label>
+                        <input v-model="tempEditPlayer.name" type="text" class="w-full border p-3 rounded-lg bg-slate-50 mt-1 font-bold">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase">Solde</label>
+                        <input v-model.number="tempEditPlayer.balance" type="number" class="w-full border p-3 rounded-lg bg-slate-50 font-bold mt-1">
+                    </div>
+                    <div class="flex gap-2 pt-2">
+                        <button @click="showEditPlayerModal = false" class="flex-1 bg-slate-200 text-slate-700 p-3 rounded-xl font-bold">Annuler</button>
+                        <button @click="savePlayerEdit" class="flex-1 bg-blue-600 text-white p-3 rounded-xl font-bold shadow-md hover:bg-blue-700">Sauvegarder</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Event Summary Modal -->
+    <transition name="fade">
+        <div v-if="showEventSummaryModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4 text-center">
+            <div class="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden">
+                <div class="bg-indigo-600 p-6 text-white">
+                    <h2 class="text-2xl font-black tracking-tight uppercase">Fin de Soirée</h2>
+                    <p class="text-indigo-200 mt-1 font-bold">{{ currentEvent.name }}</p>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-slate-500 font-bold uppercase mb-4">Gains de la soirée</p>
+                    <div class="space-y-3">
+                        <div v-for="res in eventSummaryResults" :key="res.id" class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <div class="flex items-center gap-2">
+                                <div class="w-4 h-4 rounded-full shadow-inner" :style="{ backgroundColor: res.color }"></div>
+                                <span class="font-bold text-slate-800">{{ res.name }}</span>
+                            </div>
+                            <span class="font-black text-lg" :class="res.diff >= 0 ? 'text-green-600' : 'text-red-500'">
+                                {{ formatMoney(res.diff, true) }}
+                            </span>
+                        </div>
+                    </div>
+                    <button @click="confirmEndEvent" class="w-full bg-slate-900 text-white p-4 rounded-xl font-bold shadow-lg mt-6 hover:bg-slate-800">Clôturer la soirée</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Add Player Modal -->
+    <transition name="fade">
+        <div v-if="showAddPlayerModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <h2 class="text-2xl font-black text-slate-800 mb-6 text-center tracking-tight">Nouveau Joueur</h2>
+                <input v-model="newPlayerName" @keyup.enter="addPlayer" type="text" placeholder="Prénom ou Pseudo" class="w-full border-2 border-slate-200 p-4 rounded-xl mb-4 bg-slate-50 font-bold text-lg outline-none focus:border-green-500 transition">
+                <div class="flex gap-3">
+                    <button @click="showAddPlayerModal = false" class="flex-1 bg-slate-100 text-slate-600 p-4 rounded-xl font-bold hover:bg-slate-200">Annuler</button>
+                    <button @click="addPlayer" class="flex-[2] bg-green-500 text-white p-4 rounded-xl font-black shadow-lg hover:bg-green-600 transition">Ajouter</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- New Save Modal -->
+    <transition name="fade">
+        <div v-if="showNewSaveModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <h2 class="text-xl font-black text-slate-800 mb-4 text-center tracking-tight">Nom de la sauvegarde</h2>
+                <input v-model="newSaveName" @keyup.enter="createSave" type="text" placeholder="Ma Super Partie" class="w-full border-2 border-slate-200 p-4 rounded-xl mb-4 bg-slate-50 font-bold outline-none focus:border-green-500 transition">
+                <div class="flex gap-3">
+                    <button @click="showNewSaveModal = false; newSaveName = ''" class="flex-1 bg-slate-100 text-slate-600 p-4 rounded-xl font-bold hover:bg-slate-200">Annuler</button>
+                    <button @click="createSave" class="flex-[2] bg-green-500 text-white p-4 rounded-xl font-black shadow-lg hover:bg-green-600 transition">Créer</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Custom Gage Modal -->
+    <transition name="fade">
+        <div v-if="showGageModal" class="fixed inset-0 z-50 bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <h2 class="text-xl font-black text-amber-800 mb-4 text-center tracking-tight">Assigner un gage</h2>
+                <p class="text-xs font-bold text-slate-500 mb-2">Quel gage doit accomplir {{ pendingGagePlayer?.name }} ?</p>
+                <textarea v-model="customGageText" rows="3" placeholder="Ex: Faire 10 pompes, Chanter une chanson..." class="w-full border-2 border-amber-200 p-4 rounded-xl mb-4 bg-amber-50 font-bold outline-none focus:border-amber-500 transition"></textarea>
+                <div class="flex gap-3">
+                    <button @click="showGageModal = false; pendingGagePlayer = null; customGageText = ''" class="flex-1 bg-slate-100 text-slate-600 p-4 rounded-xl font-bold hover:bg-slate-200">Annuler</button>
+                    <button @click="confirmSecondChance" class="flex-[2] bg-amber-500 text-white p-4 rounded-xl font-black shadow-lg hover:bg-amber-600 transition">Confirmer</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <!-- Confirm Modal -->
+    <transition name="fade">
+        <div v-if="confirmModal.show" class="fixed inset-0 z-[60] bg-slate-900/90 flex justify-center items-center p-4">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center">
+                <h2 class="text-lg font-black text-slate-800 mb-2">{{ confirmModal.title }}</h2>
+                <p class="text-sm text-slate-500 mb-6">{{ confirmModal.message }}</p>
+                <div class="flex gap-3">
+                    <button @click="closeConfirm" class="flex-1 bg-slate-100 text-slate-600 p-3 rounded-xl font-bold hover:bg-slate-200">{{ confirmModal.cancelText }}</button>
+                    <button @click="handleConfirm" class="flex-1 p-3 rounded-xl font-black shadow-md text-white transition" :class="confirmModal.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'">{{ confirmModal.confirmText }}</button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+</div>
+
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+
+    const { createApp } = Vue;
+
+    createApp({
+        data() {
+            return {
+                currentView: 'players',
+                showSettings: false,
+                showHistory: false,
+                showAddPlayerModal: false,
+                showEditPlayerModal: false,
+                showEventSummaryModal: false,
+                showEventModal: false,
+                showMatchResultModal: false,
+                showVictoryModal: false,
+                showGageModal: false, // For custom gages
+                isHallOfFameOpen: false,
+                isBBBOpen: false,
+                isWinsOpen: true,
+                newPlayerName: '',
+                players: [],
+                matchHistory: [],
+                historyFilterEvent: 'ALL',
+                historySortOrder: 'desc',
+                tempEditPlayer: {},
+                currentEvent: { active: false, name: '', type: '', date: null },
+                currentMatch: {
+                    isRegistered: false,
+                    betsLocked: false,
+                    hasEditedBets: false,
+                    type: '',
+                    wrestlers: ['', ''],
+                    championIndex: -1
+                },
+                draftBets: {},
+                lockedBetsDisplay: [],
+                multiplier: 1.0,
+                eventSummaryResults: [],
+                lastMatchResult: {},
+                pressTimer: null,
+                saves: [],
+                expandedSaveId: null,
+                showNewSaveModal: false,
+                pendingSaveSlot: null,
+                newSaveName: '',
+                victoryData: null,
+                pendingVictoryWinner: null,
+                pendingGagePlayer: null, // For custom gages
+                customGageText: '',      // For custom gages
+                confirmModal: { show: false, title: '', message: '', confirmText: 'Confirmer', cancelText: 'Annuler', onConfirm: null, danger: false },
+                
+                currencies: [
+                    { id: 'simflouz', name: 'Simflouz (§)', symbol: '§', position: 'before' },
+                    { id: 'paradimes', name: 'Paradimes (₱)', symbol: '₱', position: 'before' },
+                    { id: 'chf', name: 'Francs suisses (.-)', symbol: '.-', position: 'after' },
+                    { id: 'eur', name: 'Euros (€)', symbol: '€', position: 'after' },
+                    { id: 'usd', name: 'Dollars ($)', symbol: '$', position: 'before' },
+                    { id: 'jpy', name: 'Yens (¥)', symbol: '¥', position: 'before' },
+                    { id: 'mxn', name: 'Pesos Mexicains (Mex$)', symbol: 'Mex$', position: 'before' }
+                ],
+                selectedCurrencyId: 'simflouz',
+            }
+        },
+        computed: {
+            topWinRecord() {
+                if (!this.players || this.players.length === 0) return null;
+                const max = Math.max(...this.players.map(p => p.streak || 0));
+                if (max <= 0) return null;
+                const topPlayers = this.players.filter(p => (p.streak || 0) === max);
+                return { value: max, players: topPlayers };
+            },
+            topLoseRecord() {
+                if (!this.players || this.players.length === 0) return null;
+                const min = Math.min(...this.players.map(p => p.streak || 0));
+                if (min >= 0) return null;
+                const topPlayers = this.players.filter(p => (p.streak || 0) === min);
+                return { value: Math.abs(min), players: topPlayers };
+            },
+            biggestBallsRanking() {
+                return [...this.players].filter(p => (p.maxRisk || 0) > 0).sort((a, b) => (b.maxRisk || 0) - (a.maxRisk || 0));
+            },
+            uniqueHistoryEvents() {
+                const events = this.matchHistory.map(m => m.eventName).filter(Boolean);
+                return [...new Set(events)];
+            },
+            filteredHistory() {
+                let result = [...this.matchHistory];
+                if (this.historyFilterEvent !== 'ALL') {
+                    result = result.filter(m => m.eventName === this.historyFilterEvent);
+                }
+                return result.sort((a, b) => {
+                    const dateA = new Date(a.date).getTime();
+                    const dateB = new Date(b.date).getTime();
+                    return this.historySortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+                });
+            },
+            isChampionshipMatch() {
+                return /championship/i.test(this.currentMatch.type || '');
+            },
+            currentCurrencySymbol() {
+                const cur = this.currencies.find(c => c.id === this.selectedCurrencyId) || this.currencies[0];
+                return cur.symbol;
+            },
+            hasAnyWins() {
+                return this.players.some(p => p.wins > 0);
+            }
+        },
+        watch: {
+            'currentMatch.type'(newVal) {
+                if (!/championship/i.test(newVal || '')) {
+                    this.currentMatch.championIndex = -1;
+                }
+            }
+        },
+        mounted() {
+            this.loadState();
+            this.loadSavesList();
+        },
+        methods: {
+            formatMoney(num, forceSign = false) {
+                const val = num || 0;
+                const sign = val < 0 ? '-' : (forceSign && val > 0 ? '+' : '');
+                const absValStr = Math.abs(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "'");
+                const cur = this.currencies.find(c => c.id === this.selectedCurrencyId) || this.currencies[0];
+                
+                if (cur.position === 'before') {
+                    return `${sign}${cur.symbol} ${absValStr}`;
+                } else {
+                    return `${sign}${absValStr} ${cur.symbol}`;
+                }
+            },
+            formatPercentage(val) { return Math.round((val || 0) * 100) + '%'; },
+            formatDate(dateStr) {
+                if (!dateStr) return '';
+                return new Date(dateStr).toLocaleDateString('fr-FR');
+            },
+            getStreakEmoji(streak) { return streak > 2 ? '🔥' : (streak < -2 ? '🧊' : '➖'); },
+            isHistoryChampionship(match) { return /championship/i.test(match.matchType || ''); },
+
+            getDraftBet(playerId) {
+                if (!this.draftBets[playerId]) {
+                    this.draftBets[playerId] = { wrestlerIndex: -1, amount: 0 };
+                }
+                return this.draftBets[playerId];
+            },
+
+            enforceBetLimit(player) {
+                const bet = this.getDraftBet(player.id);
+                if (typeof bet.amount !== 'number') return;
+                
+                if (bet.amount > player.balance) {
+                    bet.amount = player.balance;
+                } else if (bet.amount < 0) {
+                    bet.amount = 0;
+                }
+            },
+            
+            saveState() {
+                try {
+                    const state = {
+                        players: this.players,
+                        matchHistory: this.matchHistory,
+                        currentEvent: this.currentEvent,
+                        currentMatch: this.currentMatch,
+                        draftBets: this.draftBets,
+                        selectedCurrencyId: this.selectedCurrencyId,
+                        multiplier: this.multiplier
+                    };
+                    localStorage.setItem('super_wrestling_bets_v6_data', JSON.stringify(state));
+                } catch (e) {}
+            },
+            loadState() {
+                const saved = localStorage.getItem('super_wrestling_bets_v6_data');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed.players)) {
+                            this.players = parsed.players.map(p => ({
+                                ...p,
+                                wins: p.wins || 0,
+                                biggestBallDetail: p.biggestBallDetail || null,
+                                hasEditedBalance: p.hasEditedBalance || false,
+                                gageText: p.gageText || '' // Retro-compatibility
+                            }));
+                        }
+                        if (Array.isArray(parsed.matchHistory)) this.matchHistory = parsed.matchHistory;
+                        if (parsed.currentEvent && typeof parsed.currentEvent === 'object') this.currentEvent = parsed.currentEvent;
+                        if (parsed.currentMatch && typeof parsed.currentMatch === 'object') {
+                            this.currentMatch = { ...parsed.currentMatch, hasEditedBets: parsed.currentMatch.hasEditedBets || false };
+                        }
+                        if (parsed.draftBets && typeof parsed.draftBets === 'object') this.draftBets = parsed.draftBets;
+                        if (parsed.selectedCurrencyId) this.selectedCurrencyId = parsed.selectedCurrencyId;
+                        if (typeof parsed.multiplier === 'number') this.multiplier = parsed.multiplier;
+                    } catch(e) { 
+                        localStorage.removeItem('super_wrestling_bets_v6_data');
+                    }
+                }
+            },
+            
+            persistSavesList() {
+                localStorage.setItem('super_wrestling_bets_v6_saves_list', JSON.stringify(this.saves));
+            },
+            loadSavesList() {
+                const raw = localStorage.getItem('super_wrestling_bets_v6_saves_list');
+                if (raw) {
+                    try { this.saves = JSON.parse(raw); } catch(e) { this.saves = []; }
+                }
+            },
+            getSaveData(slotId) {
+                return this.saves.find(s => s.id === slotId);
+            },
+            toggleSaveExpand(id) {
+                this.expandedSaveId = this.expandedSaveId === id ? null : id;
+            },
+            openNewSaveModal(slotId) {
+                this.pendingSaveSlot = slotId;
+                this.newSaveName = '';
+                this.showNewSaveModal = true;
+            },
+            createSave() {
+                const name = this.newSaveName.trim();
+                if (!name || !this.pendingSaveSlot) return;
+                
+                const newSave = { id: this.pendingSaveSlot, name, savedAt: new Date().toISOString() };
+                this.saves.push(newSave);
+                
+                const state = { players: this.players, matchHistory: this.matchHistory, currentEvent: this.currentEvent };
+                localStorage.setItem('super_wrestling_bets_v6_save_' + this.pendingSaveSlot, JSON.stringify(state));
+                
+                this.persistSavesList();
+                this.showNewSaveModal = false;
+                this.pendingSaveSlot = null;
+            },
+            saveGame(id) {
+                const save = this.getSaveData(id);
+                if (!save) return;
+                this.openConfirm({
+                    title: 'Écraser la sauvegarde',
+                    message: `Remplacer le contenu de "${save.name}" par la partie actuelle ?`,
+                    confirmText: 'Écraser',
+                    danger: true,
+                    onConfirm: () => {
+                        const state = { players: this.players, matchHistory: this.matchHistory, currentEvent: this.currentEvent };
+                        localStorage.setItem('super_wrestling_bets_v6_save_' + id, JSON.stringify(state));
+                        save.savedAt = new Date().toISOString();
+                        this.persistSavesList();
+                    }
+                });
+            },
+            loadGame(id) {
+                const save = this.getSaveData(id);
+                if (!save) return;
+                this.openConfirm({
+                    title: 'Charger la sauvegarde',
+                    message: `Charger "${save.name}" ? La partie en cours sera perdue.`,
+                    confirmText: 'Charger',
+                    danger: true,
+                    onConfirm: () => {
+                        const raw = localStorage.getItem('super_wrestling_bets_v6_save_' + id);
+                        if (raw) {
+                            try {
+                                const parsed = JSON.parse(raw);
+                                this.players = parsed.players || [];
+                                this.matchHistory = parsed.matchHistory || [];
+                                this.currentEvent = parsed.currentEvent || { active: false, name: '', type: '', date: null };
+                                this.currentMatch = { isRegistered: false, betsLocked: false, hasEditedBets: false, type: '', wrestlers: ['', ''], championIndex: -1 };
+                                this.draftBets = {};
+                                this.saveState();
+                            } catch(e) {}
+                        }
+                        this.expandedSaveId = null;
+                        this.showSettings = false;
+                    }
+                });
+            },
+            deleteSave(id) {
+                const save = this.getSaveData(id);
+                if (!save) return;
+                this.openConfirm({
+                    title: 'Supprimer la sauvegarde',
+                    message: `Supprimer définitivement "${save.name}" ?`,
+                    confirmText: 'Supprimer',
+                    danger: true,
+                    onConfirm: () => {
+                        localStorage.removeItem('super_wrestling_bets_v6_save_' + id);
+                        this.saves = this.saves.filter(s => s.id !== id);
+                        this.persistSavesList();
+                        if (this.expandedSaveId === id) this.expandedSaveId = null;
+                    }
+                });
+            },
+
+            openConfirm({ title, message, onConfirm, confirmText = 'Confirmer', cancelText = 'Annuler', danger = false }) {
+                this.confirmModal = { show: true, title, message, onConfirm, confirmText, cancelText, danger };
+            },
+            closeConfirm() {
+                this.confirmModal.show = false;
+                this.confirmModal.onConfirm = null;
+            },
+            handleConfirm() {
+                const action = this.confirmModal.onConfirm;
+                this.confirmModal.show = false;
+                this.confirmModal.onConfirm = null;
+                if (typeof action === 'function') action();
+            },
+            
+            openAddPlayerModal() { this.showAddPlayerModal = true; },
+            addPlayer() {
+                if (this.newPlayerName.trim()) {
+                    const id = Date.now();
+                    this.players.push({
+                        id: id,
+                        name: this.newPlayerName.trim(),
+                        color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
+                        balance: 1000,
+                        startBalance: 1000,
+                        streak: 0,
+                        maxRisk: 0,
+                        hasGage: false,
+                        gageAmount: 0,
+                        gageText: '',
+                        wins: 0,
+                        biggestBallDetail: null,
+                        hasEditedBalance: false
+                    });
+                    this.draftBets[id] = { wrestlerIndex: -1, amount: 0 };
+                    this.newPlayerName = '';
+                    this.showAddPlayerModal = false;
+                    this.saveState();
+                }
+            },
+            
+            startPress(player) {
+                this.pressTimer = setTimeout(() => {
+                    if (player.hasEditedBalance) {
+                        this.openConfirm({
+                            title: 'Action impossible',
+                            message: `Le solde de ${player.name} a déjà été modifié manuellement durant cette sauvegarde. Action bloquée pour éviter les abus.`,
+                            confirmText: 'OK',
+                            cancelText: 'Fermer'
+                        });
+                        return;
+                    }
+                    this.tempEditPlayer = { ...player };
+                    this.showEditPlayerModal = true;
+                }, 500);
+            },
+            cancelPress() { clearTimeout(this.pressTimer); },
+            savePlayerEdit() {
+                const index = this.players.findIndex(p => p.id === this.tempEditPlayer.id);
+                if (index !== -1) {
+                    this.players[index] = { ...this.tempEditPlayer, hasEditedBalance: true };
+                    this.players[index].startBalance = this.players[index].balance;
+                }
+                this.showEditPlayerModal = false;
+                this.saveState();
+            },
+
+            openSecondChance(player) {
+                this.pendingGagePlayer = player;
+                this.customGageText = '';
+                this.showGageModal = true;
+            },
+            confirmSecondChance() {
+                if (!this.pendingGagePlayer) return;
+                
+                this.pendingGagePlayer.balance += 500;
+                this.pendingGagePlayer.hasGage = true;
+                this.pendingGagePlayer.gageAmount = (this.pendingGagePlayer.gageAmount || 0) + 500;
+                this.pendingGagePlayer.gageText = this.customGageText.trim() || 'Gage mystère';
+                
+                this.saveState();
+                
+                this.showGageModal = false;
+                this.pendingGagePlayer = null;
+                this.customGageText = '';
+            },
+            resolveGage(player) {
+                this.openConfirm({
+                    title: 'Résoudre Gage',
+                    message: `Marquer le gage de ${player.name} (Dette: ${this.formatMoney(player.gageAmount)}) comme accompli ?`,
+                    onConfirm: () => {
+                        player.hasGage = false;
+                        player.gageAmount = 0;
+                        player.gageText = '';
+                        this.saveState();
+                    }
+                });
+            },
+
+            startEvent() {
+                if (this.currentEvent.name.trim() !== '' && this.currentEvent.type !== '') {
+                    this.currentEvent.active = true;
+                    this.currentEvent.date = new Date().toISOString();
+                    this.players.forEach(p => p.startBalance = p.balance);
+                    this.showEventModal = false;
+                    this.saveState();
+                } else {
+                    this.openConfirm({ title: 'Oups', message: 'Veuillez renseigner un nom et choisir un type de show.', confirmText: 'OK' });
+                }
+            },
+            endEvent() {
+                this.openConfirm({
+                    title: 'Terminer la soirée ?',
+                    message: `Le bilan des gains de "${this.currentEvent.name}" sera affiché pour tou·te·s les joueur·euses.`,
+                    confirmText: 'Terminer la soirée',
+                    cancelText: 'Retour',
+                    onConfirm: () => {
+                        this.eventSummaryResults = this.players.map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            color: p.color,
+                            diff: p.balance - (p.startBalance || 1000)
+                        }));
+                        this.showEventSummaryModal = true;
+                    }
+                });
+            },
+            confirmEndEvent() {
+                this.currentEvent.active = false;
+                this.showEventSummaryModal = false;
+                this.players.forEach(p => p.startBalance = p.balance);
+                this.saveState();
+            },
+
+            addWrestler() { this.currentMatch.wrestlers.push(''); },
+            removeWrestler(index) { this.currentMatch.wrestlers.splice(index, 1); },
+            getDefaultOdds() {
+                const oddsByEventType = {
+                    'Weekly':         { normal: 1.4, title: 1.7 },
+                    'Weekly Spécial': { normal: 1.6, title: 1.9 },
+                    'Pay Per View':   { normal: 1.8, title: 2.1 }
+                };
+                const eventOdds = oddsByEventType[this.currentEvent.type];
+                if (!eventOdds) return 1.0;
+                return this.isChampionshipMatch ? eventOdds.title : eventOdds.normal;
+            },
+            registerMatch() {
+                if (this.currentMatch.wrestlers.filter(w => w.trim()).length < 2) {
+                    this.openConfirm({ title: 'Erreur', message: 'Ajoutez au moins 2 catcheurs !', confirmText: 'OK' });
+                    return;
+                }
+                this.currentMatch.isRegistered = true;
+                this.multiplier = this.getDefaultOdds();
+                this.players.forEach(p => {
+                    if (!this.draftBets[p.id]) this.draftBets[p.id] = { wrestlerIndex: -1, amount: 0 };
+                });
+                this.saveState();
+            },
+            editMatch() { 
+                this.currentMatch.isRegistered = false; 
+                this.saveState();
+            },
+            lockBets() {
+                this.lockedBetsDisplay = this.players.map(p => {
+                    const bet = this.getDraftBet(p.id);
+                    return {
+                        playerId: p.id,
+                        playerName: p.name,
+                        color: p.color,
+                        amount: bet.amount || 0,
+                        wrestlerIndex: bet.wrestlerIndex // Changed to index to dynamically read modified names
+                    };
+                });
+                this.currentMatch.betsLocked = true;
+                this.saveState();
+            },
+            unlockBetsOnce() {
+                if (this.currentMatch.hasEditedBets) {
+                    this.openConfirm({
+                        title: 'Modification impossible',
+                        message: 'Les paris ont déjà été corrigés une fois pour ce match. Les jeux sont faits !',
+                        confirmText: 'Compris'
+                    });
+                    return;
+                }
+                this.currentMatch.betsLocked = false;
+                this.currentMatch.hasEditedBets = true;
+                this.saveState();
+            },
+            
+            getWrestlerName(idx, matchObj) {
+                if (idx === -1) return "No Contest / Nul";
+                return matchObj.wrestlers[idx];
+            },
+
+            resolveMatch(winnerIndex) {
+                const resultsDiff = [];
+                let highestBalance = 0;
+                let gameWinner = null;
+                
+                const victoryPhrases = [
+                    "Boom ! 💥 {nom} a eu le nez fin et encaisse {gain} !",
+                    "Visionnaire ! {nom} s'enrichit de {gain} 💸",
+                    "C'était calculé ! La banque verse {gain} à {nom}.",
+                    "Quel talent ! {nom} braque la banque pour {gain} 🏦"
+                ];
+                const defeatPhrases = [
+                    "Aïe, coup dur pour {nom} qui lâche {perte} 📉...",
+                    "Le pari était osé, mais {nom} perd {perte}. Ouch !",
+                    "Dommage pour {nom}, ça coûte {perte}.",
+                    "C'est la douche froide... {nom} s'allège de {perte} 🥶"
+                ];
+
+                this.players.forEach(p => {
+                    const bet = this.getDraftBet(p.id);
+                    let diff = 0;
+                    let msg = "Aucun pari placé ou No Contest.";
+                    
+                    if (bet && bet.amount > 0) {
+                        // Check for big balls / maximum risk
+                        if (p.balance > 0) {
+                            const riskRatio = bet.amount / p.balance;
+                            if (riskRatio > (p.maxRisk || 0)) {
+                                p.maxRisk = riskRatio;
+                                p.biggestBallDetail = { amount: bet.amount, balance: p.balance };
+                            }
+                        }
+
+                        if (winnerIndex === -1) {
+                            // No contest
+                        } else if (bet.wrestlerIndex === winnerIndex) {
+                            // Win case
+                            diff = Math.round(bet.amount * this.multiplier);
+                            p.balance += diff;
+                            p.streak = p.streak > 0 ? p.streak + 1 : 1;
+                            
+                            const randomMsg = victoryPhrases[Math.floor(Math.random() * victoryPhrases.length)];
+                            msg = randomMsg.replace("{nom}", p.name).replace("{gain}", this.formatMoney(diff, true));
+                        } else {
+                            // Lose case
+                            diff = -bet.amount;
+                            p.balance += diff;
+                            p.streak = p.streak < 0 ? p.streak - 1 : -1;
+                            
+                            const randomMsg = defeatPhrases[Math.floor(Math.random() * defeatPhrases.length)];
+                            msg = randomMsg.replace("{nom}", p.name).replace("{perte}", this.formatMoney(Math.abs(diff)));
+                        }
+                    }
+                    
+                    // Check for overall victory condition
+                    if (p.balance >= 10000000 && p.balance > highestBalance) {
+                        highestBalance = p.balance;
+                        gameWinner = p;
+                    }
+
+                    resultsDiff.push({ name: p.name, color: p.color, diff: diff, message: msg });
+                    this.draftBets[p.id] = { wrestlerIndex: -1, amount: 0 };
+                });
+
+                const matchRecord = {
+                    id: Date.now(),
+                    eventName: this.currentEvent.name || 'Soirée Non-nommée',
+                    date: new Date().toISOString(),
+                    matchType: this.currentMatch.type,
+                    wrestlers: [...this.currentMatch.wrestlers],
+                    championIndex: this.currentMatch.championIndex,
+                    winnerIndex: winnerIndex,
+                    playerResults: resultsDiff
+                };
+                
+                this.matchHistory.unshift(matchRecord);
+                this.lastMatchResult = matchRecord;
+                this.showMatchResultModal = true;
+                
+                if (gameWinner) {
+                    this.pendingVictoryWinner = gameWinner;
+                }
+                
+                this.currentMatch = { isRegistered: false, betsLocked: false, hasEditedBets: false, type: '', wrestlers: ['', ''], championIndex: -1 };
+                this.currentView = 'players';
+                this.multiplier = 1.0;
+                this.saveState();
+            },
+
+            closeMatchResult() {
+                this.showMatchResultModal = false;
+                if (this.pendingVictoryWinner) {
+                    this.pendingVictoryWinner.wins = (this.pendingVictoryWinner.wins || 0) + 1;
+                    this.victoryData = { ...this.pendingVictoryWinner };
+                    this.showVictoryModal = true;
+                    this.pendingVictoryWinner = null;
+                    this.saveState();
+                }
+            },
+
+            closeVictoryAndReset() {
+                this.showVictoryModal = false;
+                this.players.forEach(p => {
+                    p.balance = p.id === this.victoryData.id ? 900 : 1000;
+                    p.startBalance = p.balance;
+                    
+                    // Deliberately keep p.streak so the Hall of Fame maintains continuous series
+                    
+                    p.maxRisk = 0;
+                    p.hasGage = false;
+                    p.gageAmount = 0;
+                    p.gageText = '';
+                    p.biggestBallDetail = null;
+                    p.hasEditedBalance = false;
+                });
+                this.victoryData = null;
+                this.saveState();
+            },
+
+            getColorsForWrestler(idx) {
+                return this.players.filter(p => this.draftBets[p.id] && this.draftBets[p.id].wrestlerIndex === idx).map(p => p.color);
+            },
+            adjustMultiplier(amount) { 
+                this.multiplier = Math.max(0.1, parseFloat((this.multiplier + amount).toFixed(1))); 
+            },
+            resetGame() {
+                this.openConfirm({
+                    title: 'Réinitialiser',
+                    message: "Êtes-vous sûr de vouloir réinitialiser la partie en cours ? L'historique et les victoires seront conservés, mais les soldes et séries repasseront à zéro.",
+                    danger: true,
+                    onConfirm: () => {
+                        this.players.forEach(p => { p.balance = 1000; p.startBalance = 1000; p.streak = 0; p.maxRisk = 0; p.hasGage = false; p.gageAmount = 0; p.gageText = ''; p.biggestBallDetail = null; p.hasEditedBalance = false; });
+                        this.currentMatch = { isRegistered: false, betsLocked: false, hasEditedBets: false, type: '', wrestlers: ['', ''], championIndex: -1 };
+                        this.showSettings = false;
+                        this.saveState();
+                    }
+                });
+            }
+        }
+    }).mount('#app');
+</script>
+
+</body>
+</html>
